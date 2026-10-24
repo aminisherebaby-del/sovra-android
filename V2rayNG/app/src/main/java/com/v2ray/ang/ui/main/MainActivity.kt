@@ -9,6 +9,10 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.lifecycle.lifecycleScope
 import com.v2ray.ang.AngApplication
 import com.v2ray.ang.AppConfig
@@ -24,6 +28,9 @@ import com.v2ray.ang.handler.AngConfigManager
 import com.v2ray.ang.handler.MmkvManager
 import com.v2ray.ang.handler.SettingsChangeManager
 import com.v2ray.ang.handler.SettingsManager
+import com.v2ray.ang.sovra.SovraLoginScreen
+import com.v2ray.ang.sovra.SovraStore
+import com.v2ray.ang.sovra.SovraSync
 import com.v2ray.ang.ui.AboutActivity
 import com.v2ray.ang.ui.backup.BackupActivity
 import com.v2ray.ang.ui.base.HelperBaseComponentActivity
@@ -95,10 +102,36 @@ class MainActivity : HelperBaseComponentActivity() {
         mainViewModel.onAction(MainAction.Initialize)
 
         checkAndRequestPermission(PermissionType.POST_NOTIFICATIONS) {}
+        syncSovraInBackground()
+    }
+
+    private fun syncSovraInBackground() {
+        if (!SovraStore.hasToken(this)) return
+        lifecycleScope.launch(Dispatchers.IO) {
+            try {
+                SovraSync.sync(applicationContext)
+                withContext(Dispatchers.Main) { mainViewModel.onAction(MainAction.RefreshGroups) }
+            } catch (e: Exception) {
+                LogUtil.e(AppConfig.TAG, "SOVRA sync failed", e)
+            }
+        }
     }
 
     @Composable
     override fun ScreenContent() {
+        var loggedIn by remember { mutableStateOf(SovraStore.hasToken(this@MainActivity)) }
+        if (!loggedIn) {
+            SovraLoginScreen(onLoggedIn = {
+                loggedIn = true
+                mainViewModel.onAction(MainAction.RefreshGroups)
+            })
+        } else {
+            MainContent()
+        }
+    }
+
+    @Composable
+    private fun MainContent() {
         BackHandler { moveTaskToBack(false) }
         MainScreen(
             mainViewModel = mainViewModel,
