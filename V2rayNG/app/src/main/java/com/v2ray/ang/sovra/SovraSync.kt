@@ -44,8 +44,13 @@ object SovraSync {
         }
         SovraStore.saveVersion(ctx, servers.version)
 
-        if (MmkvManager.getSelectServer().isNullOrEmpty()) {
-            val first = MmkvManager.decodeServerList(groupId).firstOrNull()
+        // Keep the selection valid after every sync: if the previously selected
+        // server is not in the fresh SOVRA group (removed/rotated configs),
+        // fall back to the first available server instead of a dangling guid.
+        val groupServers = MmkvManager.decodeServerList(groupId)
+        val currentSelection = MmkvManager.getSelectServer()
+        if (currentSelection.isNullOrEmpty() || currentSelection !in groupServers) {
+            val first = groupServers.firstOrNull()
             if (first != null) MmkvManager.setSelectServer(first)
         }
         return result.first

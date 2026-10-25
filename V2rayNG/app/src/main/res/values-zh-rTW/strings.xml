@@ -2,7 +2,7 @@
 <resources>
     <string name="app_name" translatable="false">SOVRA VPN</string>
     <string name="app_widget_name">開關</string>
-    <string name="app_tile_name">開關</string>
+    <string name="app_tile_name">SOVRA VPN</string>
     <string name="app_tile_first_use">首次使用此功能，請使用此應用程式新增伺服器</string>
     <string name="navigation_drawer_open">開啟導覽匣</string>
     <string name="navigation_drawer_close">關閉導覽匣</string>
@@ -14,7 +14,7 @@
     <string name="pull_down_to_refresh">請下拉重新整理！</string>
 
     <!-- Notifications -->
-    <string name="notification_channel_service">v2rayNG 服務</string>
+    <string name="notification_channel_service">SOVRA VPN</string>
     <string name="notification_channel_subscription_updates">訂閱更新</string>
     <string name="notification_channel_connection_checks">連線檢查</string>
     <string name="notification_action_stop_v2ray">停止</string>

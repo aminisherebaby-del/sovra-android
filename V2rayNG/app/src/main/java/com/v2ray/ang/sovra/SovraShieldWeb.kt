@@ -1,7 +1,10 @@
 package com.v2ray.ang.sovra
 
 import android.annotation.SuppressLint
+import android.view.View
 import android.view.ViewGroup
+import android.webkit.WebResourceError
+import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.compose.runtime.Composable
@@ -19,7 +22,7 @@ import androidx.compose.ui.viewinterop.AndroidView
  */
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
-internal fun SovraShieldWeb(connected: Boolean, modifier: Modifier = Modifier) {
+internal fun SovraShieldWeb(connected: Boolean, modifier: Modifier = Modifier, onFailed: () -> Unit = {}) {
     val ctx = LocalContext.current
     val webView = remember {
         WebView(ctx).apply {
@@ -30,9 +33,20 @@ internal fun SovraShieldWeb(connected: Boolean, modifier: Modifier = Modifier) {
             setBackgroundColor(android.graphics.Color.TRANSPARENT)
             settings.javaScriptEnabled = true
             settings.allowFileAccess = true
+            settings.domStorageEnabled = true
+            setLayerType(View.LAYER_TYPE_HARDWARE, null)
             webViewClient = object : WebViewClient() {
                 override fun onPageFinished(view: WebView?, url: String?) {
                     view?.evaluateJavascript("setConnected($connected)", null)
+                }
+
+                override fun onReceivedError(view: WebView?, request: WebResourceRequest?, error: WebResourceError?) {
+                    if (request?.isForMainFrame == true) onFailed()
+                }
+
+                @Deprecated("Deprecated in Java")
+                override fun onReceivedError(view: WebView?, errorCode: Int, description: String?, failingUrl: String?) {
+                    onFailed()
                 }
             }
             loadUrl("file:///android_asset/shield.html")

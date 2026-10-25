@@ -12,6 +12,7 @@ import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -47,9 +48,10 @@ internal val SovraDanger = Color(0xFFFB7185)
  */
 @Composable
 internal fun SovraShield(connected: Boolean, fx3d: Boolean, modifier: Modifier = Modifier) {
-    if (fx3d) {
+    var webFailed by remember { mutableStateOf(false) }
+    if (fx3d && !webFailed) {
         // Real WebGL shield (three.js, offline assets). See SovraShieldWeb.kt / assets/shield.html
-        SovraShieldWeb(connected = connected, modifier = modifier)
+        SovraShieldWeb(connected = connected, modifier = modifier, onFailed = { webFailed = true })
     } else {
         // Low-power mode: still picture with a soft glow, no animation.
         Shield2D(connected, modifier)
