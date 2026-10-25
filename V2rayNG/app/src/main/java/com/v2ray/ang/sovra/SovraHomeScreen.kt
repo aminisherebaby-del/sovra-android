@@ -120,8 +120,11 @@ internal fun SovraHomeScreen(
         val sel = rows.firstOrNull { it.guid == ui.selectedGuid }
         if (autoBest && rows.isNotEmpty() && (sel == null || sel.testDelayMillis <= 0L || sel.testDelayMillis > 400L)) {
             smartConnectPending = true
-            testAll()
-            toast("در حال پیدا کردن بهترین سرور...")
+            if (groupId.isNotEmpty()) {
+                onAction(MainAction.SelectGroup(groupId))
+                onAction(MainAction.TestRealAllServers)
+            }
+            Toast.makeText(ctx, "در حال پیدا کردن بهترین سرور...", Toast.LENGTH_SHORT).show()
         } else {
             onAction(MainAction.ToggleService)
         }
