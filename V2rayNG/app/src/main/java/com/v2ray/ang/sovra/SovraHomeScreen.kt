@@ -58,6 +58,9 @@ import com.v2ray.ang.handler.MmkvManager
 import com.v2ray.ang.enums.RoutingType
 import com.v2ray.ang.handler.SettingsManager
 import com.v2ray.ang.ui.perappproxy.PerAppProxyActivity
+import com.v2ray.ang.core.CoreServiceManager
+import com.v2ray.ang.AppConfig
+import kotlinx.coroutines.delay
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -96,6 +99,33 @@ internal fun SovraHomeScreen(
     var iranBypass by remember { mutableStateOf(SovraStore.iranBypass(ctx)) }
     var appCfg by remember { mutableStateOf<SovraAppConfig?>(null) }
     var homeAccount by remember { mutableStateOf<SovraAccount?>(null) }
+    var showAdvanced by remember { mutableStateOf(false) }
+    var autoConnect by remember { mutableStateOf(SovraStore.autoConnect(ctx)) }
+    var autoBest by remember { mutableStateOf(SovraStore.autoBest(ctx)) }
+    var smartConnectPending by remember { mutableStateOf(false) }
+    var autoTried by remember { mutableStateOf(false) }
+
+    // Smart connect: after a ping test finishes, pick the best server and connect.
+    LaunchedEffect(ui.isTesting) {
+        if (!ui.isTesting && smartConnectPending) {
+            smartConnectPending = false
+            val best = rows.filter { it.testDelayMillis > 0 }.minByOrNull { it.testDelayMillis }
+            if (best != null) onAction(MainAction.SelectServer(best.guid))
+            if (!ui.isRunning) onAction(MainAction.ToggleService)
+        }
+    }
+
+    fun smartToggle() {
+        if (ui.isRunning) { onAction(MainAction.ToggleService); return }
+        val sel = rows.firstOrNull { it.guid == ui.selectedGuid }
+        if (autoBest && rows.isNotEmpty() && (sel == null || sel.testDelayMillis <= 0L || sel.testDelayMillis > 400L)) {
+            smartConnectPending = true
+            testAll()
+            toast("در حال پیدا کردن بهترین سرور...")
+        } else {
+            onAction(MainAction.ToggleService)
+        }
+    }
 
     LaunchedEffect(Unit) {
         withContext(Dispatchers.IO) {
@@ -124,6 +154,13 @@ internal fun SovraHomeScreen(
     }
 
     val selectedRow = rows.firstOrNull { it.guid == ui.selectedGuid }
+
+    LaunchedEffect(rows.size) {
+        if (!autoTried && autoConnect && rows.isNotEmpty() && !ui.isRunning) {
+            autoTried = true
+            smartToggle()
+        }
+    }
 
     LaunchedEffect(tab, groupId) {
         if (tab == 1 && groupId.isNotEmpty()) onAction(MainAction.SelectGroup(groupId))
@@ -219,7 +256,18 @@ internal fun SovraHomeScreen(
                     }
                 }
             },
-        ) { padding ->
+) { padding ->
+          if (showAdvanced) {
+            Box(modifier = Modifier.padding(padding).fillMaxSize()) {
+                SovraAdvancedScreen(
+                    iranBypass = iranBypass,
+                    onIranBypass = { applyIranBypass(it) },
+                    onPerApp = { ctx.startActivity(Intent(ctx, PerAppProxyActivity::class.java)) },
+                    onBack = { showAdvanced = false },
+                )
+            }
+            return@Scaffold
+          }
             Box(
                 modifier = Modifier
                     .padding(padding)
@@ -227,6 +275,10 @@ internal fun SovraHomeScreen(
             ) {
                 when (tab) {
                     0 -> HomeTab(
+                        autoConnect = autoConnect,
+                        onAutoConnect = { on -> autoConnect = on; SovraStore.setAutoConnect(ctx, on) },
+                        autoBest = autoBest,
+                        onAutoBest = { on -> autoBest = on; SovraStore.setAutoBest(ctx, on) },
                         account = homeAccount,
                         announcement = appCfg?.announcement ?: "",
                         maintenance = appCfg?.maintenance == true,
@@ -234,9 +286,9 @@ internal fun SovraHomeScreen(
                         serverName = selectedRow?.remarks,
                         statusLine = statusLine(mainViewModel, ui),
                         fx3d = fx3d,
-                        onToggle = { onAction(MainAction.ToggleService) },
+                        onToggle = { smartToggle() },
                         onTestConnection = { onAction(MainAction.TestCurrentServer) },
-                        onAdvanced = onOpenAdvanced,
+                        onAdvanced = { showAdvanced = true },
                     )
 
                     1 -> ServersTab(
@@ -260,7 +312,7 @@ internal fun SovraHomeScreen(
                             SovraStore.setFx3d(ctx, on)
                         },
                         onRefreshServers = { refreshServers() },
-                        onAdvanced = onOpenAdvanced,
+                        onAdvanced = { showAdvanced = true },
                         onLogout = { askLogout = true },
                         themeMode = themeMode,
                         onThemeMode = { mode ->
@@ -310,6 +362,10 @@ private fun statusLine(vm: MainViewModel, ui: MainUiState): String? = when (ui.s
 
 @Composable
 private fun HomeTab(
+    autoConnect: Boolean = false,
+    onAutoConnect: (Boolean) -> Unit = {},
+    autoBest: Boolean = true,
+    onAutoBest: (Boolean) -> Unit = {},
     account: SovraAccount?,
     announcement: String,
     maintenance: Boolean,
@@ -322,6 +378,30 @@ private fun HomeTab(
     onAdvanced: () -> Unit,
 ) {
     val connected = ui.isRunning
+    var downSpeed by remember { mutableStateOf("--") }
+    var upSpeed by remember { mutableStateOf("--") }
+    LaunchedEffect(connected) {
+        if (!connected) { downSpeed = "--"; upSpeed = "--" }
+        var lastTime = System.currentTimeMillis()
+        while (connected) {
+            delay(1000)
+            val now = System.currentTimeMillis()
+            val secs = ((now - lastTime) / 1000.0).coerceAtLeast(0.5)
+            lastTime = now
+            val speeds: Pair<String, String> = withContext(Dispatchers.IO) {
+                try {
+                    var up = 0L; var down = 0L
+                    CoreServiceManager.queryAllOutboundTrafficStats().forEach { st ->
+                        if (st.tag != AppConfig.TAG_DIRECT && st.tag != AppConfig.TAG_BLOCKED) {
+                            if (st.direction == AppConfig.UPLINK) up += st.value else if (st.direction == AppConfig.DOWNLINK) down += st.value
+                        }
+                    }
+                    Pair(formatSpeed(down / secs), formatSpeed(up / secs))
+                } catch (e: Exception) { Pair("--", "--") }
+            }
+            downSpeed = speeds.first; upSpeed = speeds.second
+        }
+    }
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -413,6 +493,50 @@ private fun HomeTab(
         }
         if (connected) {
             TextButton(onClick = onTestConnection) { Text("تست اتصال", color = SovraCyan) }
+        }
+        Spacer(Modifier.height(10.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Card)
+                .border(1.dp, CardLine, RoundedCornerShape(16.dp)).padding(horizontal = 16.dp, vertical = 10.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.weight(1f)) {
+                Text("⬇ دانلود", color = SovraMuted, fontSize = 12.sp)
+                Text(downSpeed, color = SovraCyan, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+            }
+            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.weight(1f)) {
+                Text("⬆ آپلود", color = SovraMuted, fontSize = 12.sp)
+                Text(upSpeed, color = SovraGreen, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+            }
+            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.weight(1f)) {
+                Text("پینگ سرور", color = SovraMuted, fontSize = 12.sp)
+                Text("از تب سرورها", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+            }
+        }
+        Spacer(Modifier.height(10.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Card)
+                .border(1.dp, CardLine, RoundedCornerShape(16.dp)).padding(horizontal = 16.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text("اتصال خودکار", color = Color.White, fontSize = 14.sp)
+                Text("با باز شدن اپ، خودکار وصل شو", color = SovraMuted, fontSize = 11.sp)
+            }
+            Switch(checked = autoConnect, onCheckedChange = onAutoConnect,
+                colors = SwitchDefaults.colors(checkedThumbColor = Color(0xFF04202A), checkedTrackColor = SovraCyan))
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Card)
+                .border(1.dp, CardLine, RoundedCornerShape(16.dp)).padding(horizontal = 16.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text("انتخاب خودکار بهترین سرور", color = Color.White, fontSize = 14.sp)
+                Text("قبل از وصل شدن، کم‌پینگ‌ترین سرور انتخاب میشه", color = SovraMuted, fontSize = 11.sp)
+            }
+            Switch(checked = autoBest, onCheckedChange = onAutoBest,
+                colors = SwitchDefaults.colors(checkedThumbColor = Color(0xFF04202A), checkedTrackColor = SovraCyan))
         }
         Spacer(Modifier.weight(1f))
     }
@@ -766,4 +890,10 @@ private fun formatBytes(bytes: Long): String {
     } else {
         String.format(Locale.US, "%.0f MB", bytes / 1048576.0)
     }
+}
+
+private fun formatSpeed(bytesPerSec: Double): String = when {
+    bytesPerSec >= 1048576 -> String.format(Locale.US, "%.1f MB/s", bytesPerSec / 1048576)
+    bytesPerSec >= 1024 -> String.format(Locale.US, "%.0f KB/s", bytesPerSec / 1024)
+    else -> String.format(Locale.US, "%.0f B/s", bytesPerSec)
 }

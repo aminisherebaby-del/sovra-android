@@ -13,6 +13,8 @@ object SovraStore {
     private const val KEY_IRAN_BYPASS = "iran_bypass"
     private const val KEY_SUPPORT_URL = "support_url"
     private const val KEY_ANNOUNCEMENT = "announcement"
+    private const val KEY_AUTO_CONNECT = "auto_connect"
+    private const val KEY_AUTO_BEST = "auto_best"
 
     private fun prefs(ctx: Context) =
         ctx.applicationContext.getSharedPreferences(FILE, Context.MODE_PRIVATE)
@@ -68,6 +70,14 @@ object SovraStore {
     fun saveSupportUrl(ctx: Context, url: String) {
         prefs(ctx).edit().putString(KEY_SUPPORT_URL, url).apply()
     }
+
+    /** Auto-connect on app start (off by default). */
+    fun autoConnect(ctx: Context): Boolean = prefs(ctx).getBoolean(KEY_AUTO_CONNECT, false)
+    fun setAutoConnect(ctx: Context, on: Boolean) { prefs(ctx).edit().putBoolean(KEY_AUTO_CONNECT, on).apply() }
+
+    /** Pick the best (lowest ping) server automatically before connecting. On by default. */
+    fun autoBest(ctx: Context): Boolean = prefs(ctx).getBoolean(KEY_AUTO_BEST, true)
+    fun setAutoBest(ctx: Context, on: Boolean) { prefs(ctx).edit().putBoolean(KEY_AUTO_BEST, on).apply() }
 
     fun announcement(ctx: Context): String = prefs(ctx).getString(KEY_ANNOUNCEMENT, "") ?: ""
 

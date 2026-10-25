@@ -29,15 +29,32 @@ var mat=new THREE.MeshPhysicalMaterial({color:0x0b2a52,metalness:0.55,roughness:
 var shield=new THREE.Mesh(geo,mat); group.add(shield);
 var edges=new THREE.LineSegments(new THREE.EdgesGeometry(geo,18),new THREE.LineBasicMaterial({color:0x27e1ff,transparent:true,opacity:0.95}));
 group.add(edges);
-/* Vector "S" mark (no photo): a glowing 3D tube following an S curve, same idea as the logo. */
-var sPts=[[0.48,0.78],[0.18,0.98],[-0.22,0.95],[-0.46,0.70],[-0.40,0.42],[-0.12,0.24],[0.28,0.02],[0.47,-0.22],[0.38,-0.55],[0.02,-0.76],[-0.36,-0.70],[-0.50,-0.46]]
- .map(function(q){return new THREE.Vector3(q[0],q[1],0.34);});
-var sCurve=new THREE.CatmullRomCurve3(sPts,false,'catmullrom',0.35);
-var sMat=new THREE.MeshPhysicalMaterial({color:0x9be9ff,metalness:0.35,roughness:0.18,emissive:0x27e1ff,emissiveIntensity:0.85,clearcoat:0.8});
-var sMesh=new THREE.Mesh(new THREE.TubeGeometry(sCurve,120,0.115,16,false),sMat);
-group.add(sMesh);
-/* bright caps on both ends of the S */
-[0,1].forEach(function(e){var cap=new THREE.Mesh(new THREE.SphereGeometry(0.115,16,16),sMat);cap.position.copy(sCurve.getPoint(e));group.add(cap);});
+/* Original S emblem, drawn as a metallic vector-style mark on a transparent
+   canvas (NOT a photo, NOT a tube): silver-to-neon gradient, bevel highlight. */
+function makeSTexture(){
+ var c=document.createElement('canvas'); c.width=c.height=512; var g=c.getContext('2d');
+ g.clearRect(0,0,512,512);
+ g.textAlign='center'; g.textBaseline='middle';
+ g.font='900 330px "Arial Black", Arial, sans-serif';
+ var grad=g.createLinearGradient(0,90,0,430);
+ grad.addColorStop(0,'#F4F9FF'); grad.addColorStop(0.38,'#B9D9FF');
+ grad.addColorStop(0.55,'#4FC3FF'); grad.addColorStop(0.78,'#2F8CFF'); grad.addColorStop(1,'#7B5CFF');
+ g.shadowColor='rgba(39,225,255,0.95)'; g.shadowBlur=38;
+ g.fillStyle=grad; g.fillText('S',256,268);
+ g.shadowBlur=0;
+ g.lineWidth=5; g.strokeStyle='rgba(230,246,255,0.9)'; g.strokeText('S',256,268);
+ /* top bevel shine */
+ g.globalCompositeOperation='source-atop';
+ var shine=g.createLinearGradient(0,60,0,300);
+ shine.addColorStop(0,'rgba(255,255,255,0.55)'); shine.addColorStop(1,'rgba(255,255,255,0)');
+ g.fillStyle=shine; g.fillRect(0,0,512,512);
+ g.globalCompositeOperation='source-over';
+ var t=new THREE.CanvasTexture(c); t.anisotropy=4; return t;
+}
+var sMat=new THREE.MeshBasicMaterial({map:makeSTexture(),transparent:true,opacity:0.98});
+var sMesh=new THREE.Mesh(new THREE.PlaneGeometry(1.72,1.72),sMat);
+sMesh.position.z=0.31; group.add(sMesh);
+
 /* glow sprite */
 function glowTex(){var c=document.createElement('canvas');c.width=c.height=256;var g=c.getContext('2d');
  var gr=g.createRadialGradient(128,128,10,128,128,128);gr.addColorStop(0,'rgba(80,200,255,0.85)');gr.addColorStop(1,'rgba(80,200,255,0)');
@@ -45,6 +62,9 @@ function glowTex(){var c=document.createElement('canvas');c.width=c.height=256;v
 var glow=new THREE.Sprite(new THREE.SpriteMaterial({map:glowTex(),color:0x27e1ff,transparent:true,opacity:0.5,depthWrite:false,blending:THREE.AdditiveBlending}));
 glow.scale.set(6.4,6.4,1); glow.position.z=-1.4; scene.add(glow);
 /* rings */
+/* neon floor grid */
+var grid=new THREE.GridHelper(14,28,0x27e1ff,0x1b3a6b);
+grid.material.transparent=true; grid.material.opacity=0.22; grid.position.y=-2.55; scene.add(grid);
 var rings=new THREE.Group();
 var rMat=new THREE.MeshBasicMaterial({color:0x27e1ff,transparent:true,opacity:0.5});
 [2.35,2.7].forEach(function(r,i){var ring=new THREE.Mesh(new THREE.TorusGeometry(r,0.016,8,110),rMat.clone());ring.rotation.x=Math.PI/2.35+i*0.22;rings.add(ring);});
@@ -81,7 +101,7 @@ function loop(now){ if(paused) return; requestAnimationFrame(loop); if(document.
  group.rotation.y=ry; group.rotation.x=rx;
  var br=1+Math.sin(t*(conn?2.6:1.5))*(conn?0.025:0.012); group.scale.setScalar(br);
  glow.material.opacity=(conn?0.75:0.5)+Math.sin(t*2)*0.08;
- rings.rotation.z=t*(conn?0.5:0.18); parts.rotation.y=t*(conn?0.35:0.08);
+ rings.rotation.z=t*(conn?0.9:0.25); parts.rotation.y=t*(conn?0.7:0.12); grid.position.z=(t*(conn?1.2:0.35))%0.5;
  renderer.render(scene,camera);}
 requestAnimationFrame(loop);
 })();

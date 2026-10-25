@@ -24,6 +24,11 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -62,6 +67,9 @@ internal fun PlansTab(onServersChanged: () -> Unit) {
     var order by remember { mutableStateOf<SovraOrderResult?>(null) }
     var orders by remember { mutableStateOf<List<SovraOrder>>(emptyList()) }
     var reloadOrders by remember { mutableIntStateOf(0) }
+    var detailOrder by remember { mutableStateOf<SovraOrder?>(null) }
+    var gbText by remember { mutableStateOf("10") }
+    var uploadTargetId by remember { mutableLongStateOf(0L) }
     var canTest by remember { mutableStateOf(false) }
 
     fun toast(t: String) = Toast.makeText(ctx, t, Toast.LENGTH_LONG).show()
@@ -89,8 +97,9 @@ internal fun PlansTab(onServersChanged: () -> Unit) {
     }
 
     val receiptPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
-        val current = order ?: return@rememberLauncherForActivityResult
         if (uri == null) return@rememberLauncherForActivityResult
+        val targetId = if (uploadTargetId != 0L) uploadTargetId else (order?.orderId ?: 0L)
+        if (targetId == 0L) return@rememberLauncherForActivityResult
         scope.launch {
             busy = true
             val failure: String? = withContext(Dispatchers.IO) {
@@ -99,7 +108,7 @@ internal fun PlansTab(onServersChanged: () -> Unit) {
                     val mime = ctx.contentResolver.getType(uri) ?: "image/jpeg"
                     val bytes = ctx.contentResolver.openInputStream(uri)?.use { it.readBytes() }
                         ?: throw SovraApiException("bad_image", "عکس خونده نشد")
-                    SovraApi.uploadReceipt(token, current.orderId, bytes, mime)
+                    SovraApi.uploadReceipt(token, targetId, bytes, mime)
                     null
                 } catch (e: SovraApiException) { e.message }
                 catch (e: Exception) { "خطای غیرمنتظره" }
@@ -108,6 +117,8 @@ internal fun PlansTab(onServersChanged: () -> Unit) {
             if (failure == null) {
                 toast("رسید فرستاده شد. بعد از تأیید مدیر، اکانتت فعال/تمدید میشه")
                 order = null
+                detailOrder = null
+                uploadTargetId = 0L
                 reloadOrders += 1
             } else toast(failure)
         }
@@ -129,14 +140,36 @@ internal fun PlansTab(onServersChanged: () -> Unit) {
                 ToggleChip("نامحدود", kind == "unlimited", Modifier.weight(1f)) { kind = "unlimited" }
             }
             if (kind == "volume") {
-                Text("حجم (گیگابایت)", color = Color.White, fontWeight = FontWeight.Medium)
+                Text("حجم دلخواه (۱ تا ۲۰۰۰ گیگ)", color = Color.White, fontWeight = FontWeight.Medium)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                    listOf(5, 10, 15, 20, 30, 50).forEach { g ->
-                        ToggleChip("$g", gb == g, Modifier.weight(1f)) { gb = g }
+                    listOf(5, 10, 20, 50, 100).forEach { g ->
+                        ToggleChip("$g", gb == g, Modifier.weight(1f)) { gb = g; gbText = g.toString() }
                     }
                 }
+                Slider(
+                    value = gb.toFloat(),
+                    onValueChange = { gb = it.toInt().coerceIn(1, 200); gbText = gb.toString() },
+                    valueRange = 1f..200f,
+                    colors = SliderDefaults.colors(thumbColor = SovraCyan, activeTrackColor = SovraCyan),
+                )
+                OutlinedTextField(
+                    value = gbText,
+                    onValueChange = { t ->
+                        gbText = t.filter { it.isDigit() }.take(4)
+                        gbText.toIntOrNull()?.let { gb = it.coerceIn(1, 2000) }
+                    },
+                    label = { Text("حجم دقیق (گیگابایت)") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = Color.White, unfocusedTextColor = Color.White,
+                        focusedBorderColor = SovraCyan, unfocusedBorderColor = Color(0xFF334155),
+                        cursorColor = SovraCyan, focusedLabelColor = SovraCyan, unfocusedLabelColor = SovraMuted,
+                    ),
+                )
                 val price = p.pricePerGb * gb
-                Text("مبلغ: ${formatToman(price)} تومان", color = SovraCyan, fontWeight = FontWeight.Bold)
+                Text("$gb گیگ • ${p.periodDays} روز • تانل پرسرعت • همه سرورها", color = SovraMuted, fontSize = 12.sp)
+                Text("مبلغ: ${formatToman(price)} تومان", color = SovraCyan, fontWeight = FontWeight.Bold, fontSize = 17.sp)
             } else {
                 Text("تعداد کاربر", color = Color.White, fontWeight = FontWeight.Medium)
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -151,7 +184,7 @@ internal fun PlansTab(onServersChanged: () -> Unit) {
                                 .padding(14.dp),
                             horizontalArrangement = Arrangement.SpaceBetween,
                         ) {
-                            Text("${tier.users} کاربره" + if (popular) " ⭐ محبوب" else "", color = Color.White)
+                            Text("${tier.users} کاربره" + if (popular) " ⭐ محبوب" else "" + "\n۳۰ روز • نامحدود • تانل پرسرعت", color = Color.White, fontSize = 13.sp)
                             Text("${formatToman(tier.price)} ت", color = SovraCyan, fontWeight = FontWeight.Bold)
                         }
                     }
@@ -247,7 +280,8 @@ internal fun PlansTab(onServersChanged: () -> Unit) {
             orders.take(10).forEach { o ->
                 Row(
                     modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
-                        .background(SovraSurface).border(1.dp, CardLineCompat, RoundedCornerShape(12.dp)).padding(12.dp),
+                        .background(SovraSurface).border(1.dp, CardLineCompat, RoundedCornerShape(12.dp))
+                        .clickable { detailOrder = o }.padding(12.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                 ) {
                     Text(
@@ -257,6 +291,41 @@ internal fun PlansTab(onServersChanged: () -> Unit) {
                     Text(orderStatusText(o.status), color = orderStatusColor(o.status), fontSize = 13.sp, fontWeight = FontWeight.Bold)
                 }
             }
+        }
+        val det = detailOrder
+        if (det != null) {
+            AlertDialog(
+                onDismissRequest = { detailOrder = null },
+                title = { Text("سفارش #" + det.id) },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("پلن: " + if (det.kind == "volume") "${det.gb} گیگ حجمی" else "${det.users} کاربره نامحدود")
+                        Text("مبلغ: ${formatToman(det.amount)} تومان")
+                        Text("وضعیت: " + orderStatusText(det.status), color = orderStatusColor(det.status), fontWeight = FontWeight.Bold)
+                        Text(
+                            when (det.status) {
+                                "new" -> "مرحله ۱ از ۳: مبلغ رو کارت‌به‌کارت کن و رسید رو آپلود کن."
+                                "pending" -> "مرحله ۲ از ۳: رسیدت رسیده و منتظر تأیید مدیره."
+                                "approved" -> "مرحله ۳ از ۳: تأیید شده و اکانتت فعال/تمدید شده. از تب سرورها به‌روزرسانی کن."
+                                "rejected" -> "رسید رد شده. یه رسید واضح‌تر آپلود کن یا با پشتیبانی حرف بزن."
+                                else -> ""
+                            },
+                            color = SovraMuted, fontSize = 13.sp,
+                        )
+                    }
+                },
+                confirmButton = {
+                    if (det.status == "new" || det.status == "pending" || det.status == "rejected") {
+                        TextButton(onClick = {
+                            uploadTargetId = det.id
+                            receiptPicker.launch("image/*")
+                        }) { Text("آپلود رسید / ادامه پرداخت", color = SovraCyan) }
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { detailOrder = null }) { Text("بستن") }
+                },
+            )
         }
         if (busy) CircularProgressIndicator(color = SovraCyan)
         Spacer(Modifier.height(8.dp))
