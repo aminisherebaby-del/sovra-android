@@ -29,11 +29,15 @@ var mat=new THREE.MeshPhysicalMaterial({color:0x0b2a52,metalness:0.55,roughness:
 var shield=new THREE.Mesh(geo,mat); group.add(shield);
 var edges=new THREE.LineSegments(new THREE.EdgesGeometry(geo,18),new THREE.LineBasicMaterial({color:0x27e1ff,transparent:true,opacity:0.95}));
 group.add(edges);
-/* S logo texture */
-new THREE.TextureLoader().load('sovra_s.png',function(tex){
- var m=new THREE.Mesh(new THREE.PlaneGeometry(1.55,1.55),new THREE.MeshBasicMaterial({map:tex,transparent:true,opacity:0.97}));
- m.position.z=0.30; group.add(m);
-});
+/* Vector "S" mark (no photo): a glowing 3D tube following an S curve, same idea as the logo. */
+var sPts=[[0.48,0.78],[0.18,0.98],[-0.22,0.95],[-0.46,0.70],[-0.40,0.42],[-0.12,0.24],[0.28,0.02],[0.47,-0.22],[0.38,-0.55],[0.02,-0.76],[-0.36,-0.70],[-0.50,-0.46]]
+ .map(function(q){return new THREE.Vector3(q[0],q[1],0.34);});
+var sCurve=new THREE.CatmullRomCurve3(sPts,false,'catmullrom',0.35);
+var sMat=new THREE.MeshPhysicalMaterial({color:0x9be9ff,metalness:0.35,roughness:0.18,emissive:0x27e1ff,emissiveIntensity:0.85,clearcoat:0.8});
+var sMesh=new THREE.Mesh(new THREE.TubeGeometry(sCurve,120,0.115,16,false),sMat);
+group.add(sMesh);
+/* bright caps on both ends of the S */
+[0,1].forEach(function(e){var cap=new THREE.Mesh(new THREE.SphereGeometry(0.115,16,16),sMat);cap.position.copy(sCurve.getPoint(e));group.add(cap);});
 /* glow sprite */
 function glowTex(){var c=document.createElement('canvas');c.width=c.height=256;var g=c.getContext('2d');
  var gr=g.createRadialGradient(128,128,10,128,128,128);gr.addColorStop(0,'rgba(80,200,255,0.85)');gr.addColorStop(1,'rgba(80,200,255,0)');
@@ -70,7 +74,7 @@ window.setPaused=function(v){paused=!!v; if(!paused){t0=performance.now(); reque
 var t0=performance.now();
 function loop(now){ if(paused) return; requestAnimationFrame(loop); if(document.hidden) return;
  var t=(now-t0)/1000; cur.lerp(conn?cB:cA,0.06);
- edges.material.color.copy(cur); glow.material.color.copy(cur); l1.color.copy(cur);
+ edges.material.color.copy(cur); glow.material.color.copy(cur); l1.color.copy(cur); sMat.emissive.copy(cur); sMat.color.copy(cur).lerp(new THREE.Color(0xffffff),0.55);
  rings.children.forEach(function(r){r.material.color.copy(cur);});
  pMat.color.copy(cur).lerp(new THREE.Color(0xffffff),0.35);
  if(!drag){ry+=(Math.sin(t*0.5)*0.45-ry)*0.02; rx+=(-0.06-rx)*0.04;}

@@ -120,7 +120,7 @@ internal fun SovraHomeScreen(
         iranBypass = on
         SovraStore.setIranBypass(ctx, on)
         SettingsManager.resetRoutingRulesetsFromPresets(ctx, if (on) RoutingType.WHITE_IRAN else RoutingType.WHITE)
-        toast("مسیریابی ایران به‌روز شد. برای اعمال، یک بار قطع و وصل کن")
+        Toast.makeText(ctx, "مسیریابی ایران به‌روز شد. برای اعمال، یک بار قطع و وصل کن", Toast.LENGTH_LONG).show()
     }
 
     val selectedRow = rows.firstOrNull { it.guid == ui.selectedGuid }
