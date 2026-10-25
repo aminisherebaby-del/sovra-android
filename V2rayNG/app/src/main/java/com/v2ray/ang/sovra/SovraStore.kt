@@ -15,6 +15,7 @@ object SovraStore {
     private const val KEY_ANNOUNCEMENT = "announcement"
     private const val KEY_AUTO_CONNECT = "auto_connect"
     private const val KEY_AUTO_BEST = "auto_best"
+    private const val KEY_NOTIF_INIT = "notif_init"
 
     private fun prefs(ctx: Context) =
         ctx.applicationContext.getSharedPreferences(FILE, Context.MODE_PRIVATE)
@@ -78,6 +79,9 @@ object SovraStore {
     /** Pick the best (lowest ping) server automatically before connecting. On by default. */
     fun autoBest(ctx: Context): Boolean = prefs(ctx).getBoolean(KEY_AUTO_BEST, true)
     fun setAutoBest(ctx: Context, on: Boolean) { prefs(ctx).edit().putBoolean(KEY_AUTO_BEST, on).apply() }
+
+    fun notifInitialized(ctx: Context): Boolean = prefs(ctx).getBoolean(KEY_NOTIF_INIT, false)
+    fun setNotifInitialized(ctx: Context) { prefs(ctx).edit().putBoolean(KEY_NOTIF_INIT, true).apply() }
 
     fun announcement(ctx: Context): String = prefs(ctx).getString(KEY_ANNOUNCEMENT, "") ?: ""
 

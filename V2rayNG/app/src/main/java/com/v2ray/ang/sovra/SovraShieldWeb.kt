@@ -54,6 +54,16 @@ internal fun SovraShieldWeb(connected: Boolean, modifier: Modifier = Modifier) {
     AndroidView(
         factory = { webView },
         modifier = modifier,
-        onRelease = { it.destroy() },
+        update = { view ->
+            // Tab switches release/reattach the view; never destroy the shared WebView,
+            // otherwise coming back to Home shows a blank (dead) shield.
+            view.onResume()
+            view.evaluateJavascript("setPaused(false)", null)
+            view.evaluateJavascript("setConnected($connected)", null)
+        },
+        onRelease = { view ->
+            view.evaluateJavascript("setPaused(true)", null)
+            view.onPause()
+        },
     )
 }

@@ -22,6 +22,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.NavigationBar
@@ -131,6 +133,10 @@ internal fun SovraHomeScreen(
     }
 
     LaunchedEffect(Unit) {
+        if (!SovraStore.notifInitialized(ctx)) {
+            MmkvManager.encodeSettings(AppConfig.PREF_SPEED_ENABLED, true)
+            SovraStore.setNotifInitialized(ctx)
+        }
         withContext(Dispatchers.IO) {
             try {
                 val cfg = SovraApi.appConfig()
@@ -295,7 +301,7 @@ internal fun SovraHomeScreen(
                     )
 
                     1 -> ServersTab(
-                        rows = rows,
+                        allRows = rows,
                         selectedGuid = ui.selectedGuid,
                         testing = ui.isTesting,
                         onTest = { testAll() },
@@ -381,6 +387,16 @@ private fun HomeTab(
     onAdvanced: () -> Unit,
 ) {
     val connected = ui.isRunning
+    var sessionText by remember { mutableStateOf("") }
+    LaunchedEffect(connected) {
+        if (!connected) { sessionText = ""; return@LaunchedEffect }
+        var secs = 0
+        while (true) {
+            delay(1000); secs++
+            sessionText = "مدت اتصال: " + (secs / 3600).toString().padStart(2, '0') + ":" +
+                ((secs % 3600) / 60).toString().padStart(2, '0') + ":" + (secs % 60).toString().padStart(2, '0')
+        }
+    }
     var downSpeed by remember { mutableStateOf("--") }
     var upSpeed by remember { mutableStateOf("--") }
     LaunchedEffect(connected) {
@@ -432,6 +448,9 @@ private fun HomeTab(
         )
         Spacer(Modifier.height(4.dp))
         Text(serverName ?: "سروری انتخاب نشده", color = SovraMuted, fontSize = 15.sp)
+        if (sessionText.isNotBlank()) {
+            Text(sessionText, color = SovraCyan, fontSize = 12.sp)
+        }
         if (maintenance) {
             Spacer(Modifier.height(8.dp))
             Text("⚠️ سرویس در حال تعمیره. اتصال فعلی قطع نمیشه، ولی خرید و ورود جدید ممکنه موقتاً بسته باشه.", color = Amber, fontSize = 12.sp, textAlign = TextAlign.Center)
@@ -547,7 +566,7 @@ private fun HomeTab(
 
 @Composable
 private fun ServersTab(
-    rows: List<ServerRowUiModel>,
+    allRows: List<ServerRowUiModel>,
     selectedGuid: String?,
     testing: Boolean,
     onTest: () -> Unit,
@@ -555,6 +574,20 @@ private fun ServersTab(
     onBest: () -> Unit,
     onSelect: (String) -> Unit,
 ) {
+    var query by remember { mutableStateOf("") }
+    var protoFilter by remember { mutableStateOf("همه") }
+    var sortByPing by remember { mutableStateOf(false) }
+    val protocols = remember(allRows) {
+        listOf("همه") + allRows.map { it.typeDescription.substringBefore(" ").uppercase() }.distinct().sorted()
+    }
+    val rows = remember(allRows, query, protoFilter, sortByPing) {
+        var list = allRows.filter { row ->
+            (protoFilter == "همه" || row.typeDescription.uppercase().startsWith(protoFilter)) &&
+                (query.isBlank() || row.remarks.contains(query, ignoreCase = true))
+        }
+        if (sortByPing) list = list.sortedWith(compareBy({ if (it.testDelayMillis > 0) it.testDelayMillis else Long.MAX_VALUE }))
+        list
+    }
     Column(modifier = Modifier.fillMaxSize()) {
         Text(
             "سرورها",
@@ -563,6 +596,44 @@ private fun ServersTab(
             fontWeight = FontWeight.Bold,
             modifier = Modifier.padding(start = 24.dp, end = 24.dp, top = 16.dp, bottom = 8.dp),
         )
+        Text("همه کانفیگ‌های اشتراکت اینجاست؛ حتی لینک‌های خارجی که به ساب اضافه کردی 🌍", color = SovraMuted, fontSize = 12.sp, modifier = Modifier.padding(horizontal = 24.dp, vertical = 2.dp))
+        OutlinedTextField(
+            value = query,
+            onValueChange = { query = it },
+            label = { Text("جستجوی سرور") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 6.dp),
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedTextColor = Color.White, unfocusedTextColor = Color.White,
+                focusedBorderColor = SovraCyan, unfocusedBorderColor = Color(0xFF334155),
+                cursorColor = SovraCyan, focusedLabelColor = SovraCyan, unfocusedLabelColor = SovraMuted,
+            ),
+        )
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 2.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            protocols.take(5).forEach { proto ->
+                Text(
+                    proto,
+                    color = if (protoFilter == proto) Color(0xFF04202A) else SovraMuted,
+                    fontSize = 12.sp, fontWeight = FontWeight.Bold,
+                    modifier = Modifier.clip(RoundedCornerShape(10.dp))
+                        .background(if (protoFilter == proto) SovraCyan else Card)
+                        .border(1.dp, CardLine, RoundedCornerShape(10.dp))
+                        .clickable { protoFilter = proto }.padding(horizontal = 10.dp, vertical = 7.dp),
+                )
+            }
+            Text(
+                if (sortByPing) "مرتب: کم‌پینگ ✓" else "مرتب: کم‌پینگ",
+                color = if (sortByPing) Color(0xFF04202A) else SovraCyan,
+                fontSize = 12.sp, fontWeight = FontWeight.Bold,
+                modifier = Modifier.clip(RoundedCornerShape(10.dp))
+                    .background(if (sortByPing) SovraCyan else Card)
+                    .border(1.dp, CardLine, RoundedCornerShape(10.dp))
+                    .clickable { sortByPing = !sortByPing }.padding(horizontal = 10.dp, vertical = 7.dp),
+            )
+        }
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -797,6 +868,20 @@ private fun AccountTab(
             modifier = Modifier.fillMaxWidth(),
             border = BorderStroke(1.dp, SovraCyan),
         ) { Text("به‌روزرسانی سرورها", color = SovraCyan) }
+
+        val acc2 = account
+        if (acc2 != null && acc2.subLink.isNotBlank()) {
+            OutlinedButton(
+                onClick = {
+                    val cm = ctx.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                    cm.setPrimaryClip(android.content.ClipData.newPlainText("sub", acc2.subLink))
+                    Toast.makeText(ctx, "لینک اشتراکت کپی شد", Toast.LENGTH_SHORT).show()
+                },
+                modifier = Modifier.fillMaxWidth(),
+                border = BorderStroke(1.dp, CardLine),
+            ) { Text("کپی لینک اشتراک من", color = SovraMuted) }
+        }
+        Text("نسخه اپ: SOVRA v3 • هسته اتصال Xray (متن‌باز، GPL) • api.sovra.ir", color = SovraMuted, fontSize = 11.sp)
 
         Row(
             modifier = Modifier

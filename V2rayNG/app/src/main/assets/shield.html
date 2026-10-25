@@ -80,7 +80,7 @@ var l1=new THREE.PointLight(0x27e1ff,2.4,18); l1.position.set(-3.5,2.5,4.5); sce
 var l2=new THREE.PointLight(0x7b5cff,2.0,18); l2.position.set(3.5,-2.5,3.5); scene.add(l2);
 var dl=new THREE.DirectionalLight(0xffffff,0.8); dl.position.set(0,3,6); scene.add(dl);
 function resize(){var w=cv.clientWidth||window.innerWidth,h=cv.clientHeight||window.innerHeight;renderer.setSize(w,h,false);camera.aspect=w/h;camera.updateProjectionMatrix();}
-window.addEventListener('resize',resize); resize();
+window.addEventListener('resize',resize); resize(); setTimeout(resize,120); setTimeout(resize,500); setTimeout(resize,1200);
 /* drag to rotate */
 var drag=false,px=0,py=0,ry=0,rx=-0.06;
 cv.addEventListener('pointerdown',function(e){drag=true;px=e.clientX;py=e.clientY;try{cv.setPointerCapture(e.pointerId)}catch(_){}});

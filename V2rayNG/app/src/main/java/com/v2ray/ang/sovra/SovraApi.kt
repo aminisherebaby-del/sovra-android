@@ -22,6 +22,7 @@ data class SovraAccount(
     val remainingBytes: Long?,
     val daysLeft: Int?,
     val username: String = "",
+    val subLink: String = "",
     val canStartTest: Boolean = false,
     val isTest: Boolean = false,
 )
@@ -93,6 +94,7 @@ object SovraApi {
             remainingBytes = if (acc.isNull("remaining_bytes")) null else acc.optLong("remaining_bytes"),
             daysLeft = if (acc.isNull("days_left")) null else acc.optInt("days_left"),
             username = json.optString("username"),
+            subLink = if (json.isNull("sub_link")) "" else json.optString("sub_link"),
             canStartTest = json.optBoolean("can_start_test"),
             isTest = json.optBoolean("is_test"),
         )

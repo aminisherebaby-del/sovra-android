@@ -103,6 +103,11 @@ fun SovraLoginScreen(onLoggedIn: () -> Unit) {
             Spacer(Modifier.height(16.dp))
 
             if (mode == "sub") {
+                TextButton(onClick = {
+                    val cm = ctx.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                    val clip = cm.primaryClip?.getItemAt(0)?.coerceToText(ctx)?.toString()
+                    if (!clip.isNullOrBlank()) sub = clip.trim()
+                }) { Text("📋 چسباندن از کلیپ‌بورد", color = Cyan) }
                 OutlinedTextField(
                     value = sub,
                     onValueChange = { sub = it; error = null },
