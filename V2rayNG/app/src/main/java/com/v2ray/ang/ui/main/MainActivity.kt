@@ -28,6 +28,7 @@ import com.v2ray.ang.handler.AngConfigManager
 import com.v2ray.ang.handler.MmkvManager
 import com.v2ray.ang.handler.SettingsChangeManager
 import com.v2ray.ang.handler.SettingsManager
+import com.v2ray.ang.sovra.SovraHomeScreen
 import com.v2ray.ang.sovra.SovraLoginScreen
 import com.v2ray.ang.sovra.SovraStore
 import com.v2ray.ang.sovra.SovraSync
@@ -110,7 +111,10 @@ class MainActivity : HelperBaseComponentActivity() {
         lifecycleScope.launch(Dispatchers.IO) {
             try {
                 SovraSync.sync(applicationContext)
-                withContext(Dispatchers.Main) { mainViewModel.onAction(MainAction.RefreshGroups) }
+                withContext(Dispatchers.Main) {
+                    mainViewModel.refreshSelectedGuid()
+                    mainViewModel.onAction(MainAction.RefreshGroups)
+                }
             } catch (e: Exception) {
                 LogUtil.e(AppConfig.TAG, "SOVRA sync failed", e)
             }
@@ -120,13 +124,35 @@ class MainActivity : HelperBaseComponentActivity() {
     @Composable
     override fun ScreenContent() {
         var loggedIn by remember { mutableStateOf(SovraStore.hasToken(this@MainActivity)) }
+        var advanced by remember { mutableStateOf(false) }
         if (!loggedIn) {
             SovraLoginScreen(onLoggedIn = {
                 loggedIn = true
+                mainViewModel.refreshSelectedGuid()
                 mainViewModel.onAction(MainAction.RefreshGroups)
             })
-        } else {
+        } else if (advanced) {
             MainContent()
+            BackHandler { advanced = false }
+        } else {
+            BackHandler { moveTaskToBack(false) }
+            SovraHomeScreen(
+                mainViewModel = mainViewModel,
+                onAction = { action -> dispatchSovraAction(action) },
+                onOpenAdvanced = { advanced = true },
+                onLoggedOut = {
+                    loggedIn = false
+                    mainViewModel.onAction(MainAction.RefreshGroups)
+                },
+            )
+        }
+    }
+
+    private fun dispatchSovraAction(action: MainAction) {
+        when (action) {
+            MainAction.ToggleService -> handleFabAction()
+            is MainAction.SelectServer -> setSelectServer(action.guid)
+            else -> mainViewModel.onAction(action)
         }
     }
 

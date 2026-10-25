@@ -13,6 +13,16 @@ data class SovraConfig(val name: String, val country: String, val link: String)
 
 data class SovraServers(val configs: List<SovraConfig>, val version: String)
 
+data class SovraAccount(
+    val active: Boolean,
+    val reason: String,
+    val planType: String,
+    val quotaBytes: Long,
+    val usedBytes: Long,
+    val remainingBytes: Long?,
+    val daysLeft: Int?,
+)
+
 object SovraApi {
     const val BASE_URL = "https://api.sovra.ir"
     private const val TIMEOUT_MS = 15000
@@ -41,6 +51,31 @@ object SovraApi {
         }
         if (list.isEmpty()) throw SovraApiException("no_configs", "سروری برای این اکانت پیدا نشد")
         return SovraServers(list, json.optString("version"))
+    }
+
+    /** Fetches usage and expiry of the logged-in account. Blocking. */
+    fun me(token: String): SovraAccount {
+        val json = request("GET", "/v1/me", token, null)
+        val acc = json.optJSONObject("account")
+            ?: throw SovraApiException("bad_response", "پاسخ سرور نامعتبره")
+        return SovraAccount(
+            active = acc.optBoolean("active"),
+            reason = acc.optString("reason"),
+            planType = acc.optString("plan_type"),
+            quotaBytes = acc.optLong("quota_bytes"),
+            usedBytes = acc.optLong("used_bytes"),
+            remainingBytes = if (acc.isNull("remaining_bytes")) null else acc.optLong("remaining_bytes"),
+            daysLeft = if (acc.isNull("days_left")) null else acc.optInt("days_left"),
+        )
+    }
+
+    /** Ends the session on the server. Errors are ignored: the local session is removed anyway. */
+    fun logout(token: String) {
+        try {
+            request("POST", "/v1/auth/logout", token, "{}")
+        } catch (e: SovraApiException) {
+            // the local session is removed regardless
+        }
     }
 
     private fun request(method: String, path: String, token: String?, body: String?): JSONObject {
