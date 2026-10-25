@@ -55,6 +55,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.v2ray.ang.handler.MmkvManager
+import com.v2ray.ang.enums.RoutingType
+import com.v2ray.ang.handler.SettingsManager
+import com.v2ray.ang.ui.perappproxy.PerAppProxyActivity
+import android.content.Intent
+import android.net.Uri
+import androidx.compose.foundation.isSystemInDarkTheme
 import com.v2ray.ang.ui.main.MainAction
 import com.v2ray.ang.ui.main.MainStatus
 import com.v2ray.ang.ui.main.MainUiState
@@ -86,6 +92,36 @@ internal fun SovraHomeScreen(
     var tab by remember { mutableIntStateOf(0) }
     var fx3d by remember { mutableStateOf(SovraStore.fx3d(ctx)) }
     var askLogout by remember { mutableStateOf(false) }
+    var themeMode by remember { mutableStateOf(SovraStore.themeMode(ctx)) }
+    var iranBypass by remember { mutableStateOf(SovraStore.iranBypass(ctx)) }
+    var appCfg by remember { mutableStateOf<SovraAppConfig?>(null) }
+    var homeAccount by remember { mutableStateOf<SovraAccount?>(null) }
+
+    LaunchedEffect(Unit) {
+        withContext(Dispatchers.IO) {
+            try {
+                val cfg = SovraApi.appConfig()
+                SovraStore.saveSupportUrl(ctx, cfg.supportUrl)
+                SovraStore.saveAnnouncement(ctx, cfg.announcement)
+                withContext(Dispatchers.Main) { appCfg = cfg }
+            } catch (e: Exception) { /* app must open without API */ }
+        }
+    }
+    LaunchedEffect(tab) {
+        if (tab == 0 || tab == 3) {
+            val acc = withContext(Dispatchers.IO) {
+                try { SovraStore.token(ctx)?.let { SovraApi.me(it) } } catch (e: Exception) { null }
+            }
+            if (acc != null) homeAccount = acc
+        }
+    }
+
+    fun applyIranBypass(on: Boolean) {
+        iranBypass = on
+        SovraStore.setIranBypass(ctx, on)
+        SettingsManager.resetRoutingRulesetsFromPresets(ctx, if (on) RoutingType.WHITE_IRAN else RoutingType.WHITE)
+        toast("مسیریابی ایران به‌روز شد. برای اعمال، یک بار قطع و وصل کن")
+    }
 
     val selectedRow = rows.firstOrNull { it.guid == ui.selectedGuid }
 
@@ -157,12 +193,17 @@ internal fun SovraHomeScreen(
         }
     }
 
+    val darkTheme = when (themeMode) {
+        "dark" -> true
+        "light" -> false
+        else -> isSystemInDarkTheme()
+    }
     CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
         Scaffold(
-            containerColor = SovraBg,
+            containerColor = if (darkTheme) SovraBg else Color(0xFFEAF1FF),
             bottomBar = {
                 NavigationBar(containerColor = SovraSurface) {
-                    val items = listOf("خانه" to "🛡️", "سرورها" to "🌐", "حساب" to "👤")
+                    val items = listOf("خانه" to "🛡️", "سرورها" to "🌐", "پلن‌ها" to "💳", "حساب" to "👤")
                     items.forEachIndexed { index, item ->
                         NavigationBarItem(
                             selected = tab == index,
@@ -186,6 +227,9 @@ internal fun SovraHomeScreen(
             ) {
                 when (tab) {
                     0 -> HomeTab(
+                        account = homeAccount,
+                        announcement = appCfg?.announcement ?: "",
+                        maintenance = appCfg?.maintenance == true,
                         ui = ui,
                         serverName = selectedRow?.remarks,
                         statusLine = statusLine(mainViewModel, ui),
@@ -205,6 +249,10 @@ internal fun SovraHomeScreen(
                         onSelect = { guid -> onAction(MainAction.SelectServer(guid)) },
                     )
 
+                    2 -> PlansTab(onServersChanged = {
+                        mainViewModel.onAction(MainAction.RefreshGroups)
+                    })
+
                     else -> AccountTab(
                         fx3d = fx3d,
                         onFx3d = { on ->
@@ -214,6 +262,23 @@ internal fun SovraHomeScreen(
                         onRefreshServers = { refreshServers() },
                         onAdvanced = onOpenAdvanced,
                         onLogout = { askLogout = true },
+                        themeMode = themeMode,
+                        onThemeMode = { mode ->
+                            themeMode = mode
+                            SovraStore.setThemeMode(ctx, mode)
+                        },
+                        iranBypass = iranBypass,
+                        onIranBypass = { applyIranBypass(it) },
+                        onPerApp = {
+                            ctx.startActivity(Intent(ctx, PerAppProxyActivity::class.java))
+                        },
+                        onSupport = {
+                            val url = appCfg?.supportUrl?.takeIf { it.isNotBlank() } ?: SovraStore.supportUrl(ctx)
+                            if (url.isNotBlank()) {
+                                try { ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }
+                                catch (e: Exception) { toast("لینک پشتیبانی باز نشد") }
+                            } else toast("لینک پشتیبانی تنظیم نشده")
+                        },
                     )
                 }
             }
@@ -245,6 +310,9 @@ private fun statusLine(vm: MainViewModel, ui: MainUiState): String? = when (ui.s
 
 @Composable
 private fun HomeTab(
+    account: SovraAccount?,
+    announcement: String,
+    maintenance: Boolean,
     ui: MainUiState,
     serverName: String?,
     statusLine: String?,
@@ -281,6 +349,47 @@ private fun HomeTab(
         )
         Spacer(Modifier.height(4.dp))
         Text(serverName ?: "سروری انتخاب نشده", color = SovraMuted, fontSize = 15.sp)
+        if (maintenance) {
+            Spacer(Modifier.height(8.dp))
+            Text("⚠️ سرویس در حال تعمیره. اتصال فعلی قطع نمیشه، ولی خرید و ورود جدید ممکنه موقتاً بسته باشه.", color = Amber, fontSize = 12.sp, textAlign = TextAlign.Center)
+        }
+        if (announcement.isNotBlank()) {
+            Spacer(Modifier.height(8.dp))
+            Text("📢 " + announcement, color = SovraCyan, fontSize = 12.sp, textAlign = TextAlign.Center)
+        }
+        val acc = account
+        if (acc != null) {
+            Spacer(Modifier.height(10.dp))
+            Column(
+                modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Card)
+                    .border(1.dp, CardLine, RoundedCornerShape(16.dp)).padding(horizontal = 16.dp, vertical = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("وضعیت اکانت", color = SovraMuted, fontSize = 13.sp)
+                    Text(if (acc.active) "فعال ✅" else "غیرفعال", color = if (acc.active) SovraGreen else SovraDanger, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                }
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("روز مانده", color = SovraMuted, fontSize = 13.sp)
+                    Text(acc.daysLeft?.let { "$it روز" } ?: "—", color = Color.White, fontSize = 13.sp)
+                }
+                if (acc.quotaBytes > 0L) {
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text("حجم", color = SovraMuted, fontSize = 13.sp)
+                        Text(formatBytes(acc.usedBytes) + " از " + formatBytes(acc.quotaBytes), color = Color.White, fontSize = 13.sp)
+                    }
+                } else {
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text("حجم", color = SovraMuted, fontSize = 13.sp)
+                        Text("نامحدود", color = Color.White, fontSize = 13.sp)
+                    }
+                }
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("سرور فعلی", color = SovraMuted, fontSize = 13.sp)
+                    Text(serverName ?: "—", color = Color.White, fontSize = 13.sp)
+                }
+            }
+        }
         if (statusLine != null) {
             Spacer(Modifier.height(6.dp))
             Text(statusLine, color = SovraMuted, fontSize = 12.sp, textAlign = TextAlign.Center)
@@ -411,8 +520,20 @@ private fun ServerRow(row: ServerRowUiModel, selected: Boolean, onClick: () -> U
             Text(row.remarks, color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Medium)
             Text(row.typeDescription, color = SovraMuted, fontSize = 12.sp)
         }
-        Text(delayText, color = delayColor, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+        Column(horizontalAlignment = Alignment.End) {
+            Text(delayText, color = delayColor, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+            Text(pingBars(delay), color = delayColor, fontSize = 11.sp)
+        }
     }
+}
+
+private fun pingBars(delay: Long): String = when {
+    delay in 1L..150L -> "▂▄▆█ عالی"
+    delay in 151L..300L -> "▂▄▆ خوب"
+    delay in 301L..800L -> "▂▄ متوسط"
+    delay > 800L -> "▂ ضعیف"
+    delay < 0L -> "ناموفق"
+    else -> "تست نشده"
 }
 
 @Composable
@@ -422,6 +543,12 @@ private fun AccountTab(
     onRefreshServers: () -> Unit,
     onAdvanced: () -> Unit,
     onLogout: () -> Unit,
+    themeMode: String = "system",
+    onThemeMode: (String) -> Unit = {},
+    iranBypass: Boolean = true,
+    onIranBypass: (Boolean) -> Unit = {},
+    onPerApp: () -> Unit = {},
+    onSupport: () -> Unit = {},
 ) {
     val ctx = LocalContext.current
     var account by remember { mutableStateOf<SovraAccount?>(null) }
@@ -569,6 +696,53 @@ private fun AccountTab(
                     checkedTrackColor = SovraCyan,
                 ),
             )
+        }
+
+        // راهنمایی: این دکمه‌ها از همین صفحه در دسترسن
+        OutlinedButton(
+            onClick = onSupport,
+            modifier = Modifier.fillMaxWidth(),
+            border = BorderStroke(1.dp, SovraCyan),
+        ) { Text("💬 پشتیبانی تلگرام", color = SovraCyan) }
+
+        Row(
+            modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(Card)
+                .border(1.dp, CardLine, RoundedCornerShape(18.dp)).padding(horizontal = 18.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text("دور زدن سایت‌ها و اپ‌های ایرانی", color = Color.White, fontSize = 16.sp)
+                Text("ترافیک ایران مستقیم میره (سریع‌تر و کم‌مصرف‌تر)", color = SovraMuted, fontSize = 12.sp)
+            }
+            Switch(checked = iranBypass, onCheckedChange = onIranBypass,
+                colors = SwitchDefaults.colors(checkedThumbColor = Color(0xFF04202A), checkedTrackColor = SovraCyan))
+        }
+
+        OutlinedButton(
+            onClick = onPerApp,
+            modifier = Modifier.fillMaxWidth(),
+            border = BorderStroke(1.dp, CardLine),
+        ) { Text("انتخاب اپ‌هایی که از VPN رد بشن", color = SovraMuted) }
+
+        Column(
+            modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(Card)
+                .border(1.dp, CardLine, RoundedCornerShape(18.dp)).padding(horizontal = 18.dp, vertical = 14.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text("تم برنامه", color = Color.White, fontSize = 16.sp)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                listOf("system" to "خودکار", "dark" to "تیره", "light" to "روشن").forEach { (mode, label) ->
+                    Text(label,
+                        color = if (themeMode == mode) Color(0xFF04202A) else SovraMuted,
+                        fontWeight = FontWeight.Bold, fontSize = 13.sp,
+                        modifier = Modifier.weight(1f).clip(RoundedCornerShape(10.dp))
+                            .background(if (themeMode == mode) SovraCyan else Card)
+                            .border(1.dp, CardLine, RoundedCornerShape(10.dp))
+                            .clickable { onThemeMode(mode) }.padding(vertical = 9.dp),
+                        textAlign = TextAlign.Center)
+                }
+            }
+            Text("تم روشن/تیره روی صفحه اصلی اعمال میشه؛ بقیه صفحه‌ها تم تیره‌ی نئونی دارن.", color = SovraMuted, fontSize = 11.sp)
         }
 
         OutlinedButton(

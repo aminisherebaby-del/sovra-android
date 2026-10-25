@@ -1,6 +1,10 @@
 package com.v2ray.ang.sovra
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -48,6 +52,9 @@ fun SovraLoginScreen(onLoggedIn: () -> Unit) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     var sub by remember { mutableStateOf("") }
+    var username by remember { mutableStateOf("") }
+    var password by remember { mutableStateOf("") }
+    var mode by remember { mutableStateOf("sub") }
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
 
@@ -68,30 +75,69 @@ fun SovraLoginScreen(onLoggedIn: () -> Unit) {
             Text("وارد حساب خودت شو", color = Color.White, fontSize = 18.sp)
             Spacer(Modifier.height(4.dp))
             Text(
-                "لینک اشتراکت رو اینجا بچسبون",
+                "با لینک اشتراک، یا نام کاربری وارد شو؛ یا حساب تازه بساز",
                 color = Muted,
                 fontSize = 14.sp,
             )
-            Spacer(Modifier.height(28.dp))
+            Spacer(Modifier.height(20.dp))
 
-            OutlinedTextField(
-                value = sub,
-                onValueChange = { sub = it; error = null },
+            Row(
                 modifier = Modifier.fillMaxWidth(),
-                label = { Text("لینک اشتراک") },
-                singleLine = true,
-                enabled = !busy,
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedTextColor = Color.White,
-                    unfocusedTextColor = Color.White,
-                    disabledTextColor = Muted,
-                    focusedBorderColor = Cyan,
-                    unfocusedBorderColor = Color(0xFF334155),
-                    cursorColor = Cyan,
-                    focusedLabelColor = Cyan,
-                    unfocusedLabelColor = Muted,
-                ),
-            )
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                listOf("sub" to "لینک اشتراک", "user" to "نام کاربری", "register" to "ثبت‌نام").forEach { (m, label) ->
+                    Text(
+                        label,
+                        color = if (mode == m) Color(0xFF04202A) else Muted,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 13.sp,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                        modifier = Modifier.weight(1f)
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(if (mode == m) Cyan else Color(0xFF0E1627))
+                            .clickable { mode = m; error = null }
+                            .padding(vertical = 10.dp),
+                    )
+                }
+            }
+            Spacer(Modifier.height(16.dp))
+
+            if (mode == "sub") {
+                OutlinedTextField(
+                    value = sub,
+                    onValueChange = { sub = it; error = null },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("لینک اشتراک") },
+                    singleLine = true,
+                    enabled = !busy,
+                    colors = fieldColors(),
+                )
+            } else {
+                OutlinedTextField(
+                    value = username,
+                    onValueChange = { username = it; error = null },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("نام کاربری") },
+                    singleLine = true,
+                    enabled = !busy,
+                    colors = fieldColors(),
+                )
+                Spacer(Modifier.height(12.dp))
+                OutlinedTextField(
+                    value = password,
+                    onValueChange = { password = it; error = null },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text(if (mode == "register") "رمز عبور (حداقل ۸ حرف)" else "رمز عبور") },
+                    singleLine = true,
+                    enabled = !busy,
+                    visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                    colors = fieldColors(),
+                )
+                if (mode == "register") {
+                    Spacer(Modifier.height(8.dp))
+                    Text("بعد از ثبت‌نام، از تب پلن‌ها می‌تونی تست رایگان بگیری یا خرید کنی.", color = Muted, fontSize = 12.sp)
+                }
+            }
 
             if (error != null) {
                 Spacer(Modifier.height(12.dp))
@@ -107,15 +153,24 @@ fun SovraLoginScreen(onLoggedIn: () -> Unit) {
                         error = null
                         val failure: String? = withContext(Dispatchers.IO) {
                             try {
-                                val token = SovraApi.loginSub(sub)
+                                val token = when (mode) {
+                                    "sub" -> SovraApi.loginSub(sub)
+                                    "register" -> SovraApi.register(username, password)
+                                    else -> SovraApi.login(username, password)
+                                }
                                 SovraStore.saveToken(ctx, token)
-                                SovraSync.sync(ctx, true)
+                                if (mode == "sub") {
+                                    SovraSync.sync(ctx, true)
+                                } else {
+                                    // New / username accounts may not have servers yet (free test / purchase first).
+                                    try { SovraSync.sync(ctx, true) } catch (e: SovraApiException) { /* keep session */ }
+                                }
                                 null
                             } catch (e: SovraApiException) {
-                                SovraStore.clearToken(ctx)
+                                if (mode == "sub") SovraStore.clearToken(ctx)
                                 e.message ?: "خطا"
                             } catch (e: Exception) {
-                                SovraStore.clearToken(ctx)
+                                if (mode == "sub") SovraStore.clearToken(ctx)
                                 "خطای غیرمنتظره. دوباره امتحان کن"
                             }
                         }
@@ -123,7 +178,11 @@ fun SovraLoginScreen(onLoggedIn: () -> Unit) {
                         if (failure == null) onLoggedIn() else error = failure
                     }
                 },
-                enabled = !busy && sub.isNotBlank(),
+                enabled = !busy && when (mode) {
+                    "sub" -> sub.isNotBlank()
+                    "register" -> username.isNotBlank() && password.length >= 8
+                    else -> username.isNotBlank() && password.isNotBlank()
+                },
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(52.dp),
@@ -141,9 +200,21 @@ fun SovraLoginScreen(onLoggedIn: () -> Unit) {
                         modifier = Modifier.height(22.dp),
                     )
                 } else {
-                    Text("ورود", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                    Text(if (mode == "register") "ساخت حساب" else "ورود", fontSize = 16.sp, fontWeight = FontWeight.Bold)
                 }
             }
         }
     }
 }
+
+@Composable
+private fun fieldColors() = OutlinedTextFieldDefaults.colors(
+    focusedTextColor = Color.White,
+    unfocusedTextColor = Color.White,
+    disabledTextColor = Muted,
+    focusedBorderColor = Cyan,
+    unfocusedBorderColor = Color(0xFF334155),
+    cursorColor = Cyan,
+    focusedLabelColor = Cyan,
+    unfocusedLabelColor = Muted,
+)

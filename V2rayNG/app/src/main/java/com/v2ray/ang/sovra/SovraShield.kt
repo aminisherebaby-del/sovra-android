@@ -48,8 +48,10 @@ internal val SovraDanger = Color(0xFFFB7185)
 @Composable
 internal fun SovraShield(connected: Boolean, fx3d: Boolean, modifier: Modifier = Modifier) {
     if (fx3d) {
-        Shield3D(connected, modifier)
+        // Real WebGL shield (three.js, offline assets). See SovraShieldWeb.kt / assets/shield.html
+        SovraShieldWeb(connected = connected, modifier = modifier)
     } else {
+        // Low-power mode: still picture with a soft glow, no animation.
         Shield2D(connected, modifier)
     }
 }
